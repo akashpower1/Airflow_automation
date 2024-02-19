@@ -1,0 +1,77 @@
+from airflow import DAG
+from airflow.operators.dummy_operator import DummyOperator
+from airflow.operators.bash_operator import BashOperator
+from airflow.operators.ssh_operator import SSHOperator
+from airflow.utils.dates import datetime, timedelta
+from airflow.utils.task_group import TaskGroup
+
+default_args = {
+    'owner': '{{ owner }}',
+    'depends_on_past': False,
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+dag = DAG(
+    '{{ dag_id }}',
+    default_args=default_args,
+    description='Automated DAG generated using Jinja',
+    schedule_interval='{{ schedule_interval }}',
+)
+
+{% set task_dict = {} %}
+
+{% for task_or_group in tasks %}
+{% if task_or_group.type == 'task' %}
+# Individual task: {{ task_or_group.name }}
+{% set _ = task_dict.__setitem__(task_or_group.name, task_or_group)%}
+{% if task_or_group.connection.type == 'ssh_hook' %}
+{{ task_or_group.name }} = SSHOperator(
+    task_id='{{ task_or_group.name }}',
+    command='{{ task_or_group.command }}',
+    ssh_conn_id='{{ task_or_group.connection.ssh_conn_id }}',
+    dag=dag,
+)
+{% elif task_or_group.connection.type == 'conn_id' %}
+{{ task_or_group.name }} = BashOperator(
+    task_id='{{ task_or_group.name }}',
+    bash_command='{{ task_or_group.command }}',
+    dag=dag,
+    xcom_push=True,
+    env={'AIRFLOW_CONN_{{ task_or_group.connection.conn_id }}': '{{ task_or_group.connection.conn_id }}'}
+)
+{% endif %}
+{% elif task_or_group.type == 'group' %}
+# Task Group: {{ task_or_group.name }}
+with TaskGroup('{{ task_or_group.name }}') as {{ task_or_group.name }}:
+    {% for task in task_or_group.tasks %}
+    # Task: {{ task.name }}
+    {% set _ = task_dict.__setitem__(task.name, task)%}
+    {% if task.connection.type == 'ssh_hook' %}
+    {{ task.name }} = SSHOperator(
+        task_id='{{ task.name }}',
+        command='{{ task.command }}',
+        ssh_conn_id='{{ task.connection.ssh_conn_id }}',
+        dag=dag,
+    )
+    {% elif task.connection.type == 'conn_id' %}
+    {{ task.name }} = BashOperator(
+        task_id='{{ task.name }}',
+        bash_command='{{ task.command }}',
+        dag=dag,
+        xcom_push=True,
+        env={'AIRFLOW_CONN_{{ task.connection.conn_id }}': '{{ task.connection.conn_id }}'}
+    )
+    {% endif %}
+    {% endfor %}
+    {% for tf in task_or_group.task_flows %}
+    {{tf}}
+    {% endfor %}
+{% endif %}
+{% endfor %}
+
+{% for tf in final_task_flows %}
+{{tf}}
+{% endfor %}

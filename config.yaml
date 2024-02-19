@@ -1,0 +1,35 @@
+variables:
+  var1: value1
+  var2: value2
+
+tasks:
+  - type: task
+    name: task1
+    command: echo "Task 1, var1={{ variables.var1 }}"
+    connection:
+      type: ssh_hook
+      ssh_conn_id: my_ssh_connection
+
+  - type: task
+    name: task2
+    command: echo "Task 2, var2={{ variables.var2 }}"
+    connection:
+      type: conn_id
+      conn_id: my_connection_id
+
+  - type: group
+    name: group1
+    tasks:
+      - name: task3
+        command: echo "Task 3 in group 1, var1={{ variables.var1 }}"
+        connection:
+          type: ssh_hook
+          ssh_conn_id: my_ssh_connection
+      - name: task4
+        command: echo "Task 4 in group 1, var2={{ variables.var2 }}"
+        connection:
+          type: conn_id
+          conn_id: my_connection_id
+    task_flows: ["task3 >> task4"]
+
+final_task_flows: ["task1 >> group1 >> task2"]
